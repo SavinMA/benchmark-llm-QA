@@ -1,4 +1,3 @@
 {
-  "agentCanUpdateSnapshot": true,
-  "start": ".\\venv\\Scripts\\activate"
+  "agentCanUpdateSnapshot": true
 }
