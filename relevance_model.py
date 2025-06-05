@@ -1,68 +1,180 @@
 from sentence_transformers import SentenceTransformer, util
 import torch
+import asyncio
+from typing import Dict, Any, List
+from datetime import datetime
+from src.benchmark import LLMBenchmark
+from src.models import Query, QueryAnswerWithActualAnswer, BenchmarkResult, BenchmarkSummary
 
-class RelevanceModel:
-    def __init__(self, model_name='sentence-transformers/all-MiniLM-L6-v2'):
-        self.model = SentenceTransformer(model_name)
 
-    def calculate_relevance(self, query: str, response: str) -> float:
+class RelevanceModel(LLMBenchmark):
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+        self.model = SentenceTransformer(config.get('model_name', 'sentence-transformers/all-MiniLM-L6-v2'))
+        self.threshold = config.get('threshold', 0.5)
+
+    def calculate_relevance(self, text1: str, text2: str) -> float:
         """
-        Calculates the relevance score between a query and a response.
-        The score is a cosine similarity between their embeddings, ranging from -1 to 1.
-        Higher values indicate higher relevance.
+        Calculates the relevance score (cosine similarity) between two texts.
         """
-        # Encode the query and response into embeddings
-        query_embedding = self.model.encode(query, convert_to_tensor=True)
-        response_embedding = self.model.encode(response, convert_to_tensor=True)
-
-        # Calculate cosine similarity between the embeddings
-        cosine_similarity = util.pytorch_cos_sim(query_embedding, response_embedding)
-
-        # Return the similarity score as a float
+        embedding1 = self.model.encode(text1, convert_to_tensor=True)
+        embedding2 = self.model.encode(text2, convert_to_tensor=True)
+        cosine_similarity = util.pytorch_cos_sim(embedding1, embedding2)
         return cosine_similarity.item()
 
-    def is_suitable(self, query: str, response: str, threshold: float = 0.5) -> bool:
+    def is_suitable(self, relevance_score: float) -> bool:
         """
         Determines if a response is suitable based on a relevance threshold.
         """
-        relevance_score = self.calculate_relevance(query, response)
-        return relevance_score >= threshold
+        return relevance_score >= self.threshold
 
-if __name__ == "__main__":
-    # Example Usage
-    model = RelevanceModel()
+    async def evaluate_single(
+        self, 
+        query_answer_with_expected_answer: QueryAnswerWithActualAnswer
+    ) -> BenchmarkResult:
+        query_text = query_answer_with_expected_answer.query
+        actual_answer_text = query_answer_with_expected_answer.actual_answer
+        expected_answer_text = query_answer_with_expected_answer.expected_answer
 
-    query1 = "What is the capital of France?"
-    response1 = "The capital of France is Paris."
-    response2 = "The weather is nice today."
+        # For relevance, we compare the actual answer to the expected answer or query
+        # Let's compare actual_answer to expected_answer for direct relevance assessment
+        # Or, if expected_answer is not always available or sufficient, compare actual_answer to query
+        # For this model, I'll calculate relevance based on actual_answer vs expected_answer
+        # and suitability based on actual_answer vs query.
 
-    print(f"Query: {query1}")
-    print(f"Response: {response1}")
-    relevance_score1 = model.calculate_relevance(query1, response1)
-    print(f"Relevance Score: {relevance_score1:.4f}")
-    print(f"Is Suitable (threshold=0.5): {model.is_suitable(query1, response1, threshold=0.5)}\n")
+        # Calculate relevance of actual_answer to expected_answer
+        relevance_score_to_expected = self.calculate_relevance(actual_answer_text, expected_answer_text)
 
-    print(f"Query: {query1}")
-    print(f"Response: {response2}")
-    relevance_score2 = model.calculate_relevance(query1, response2)
-    print(f"Relevance Score: {relevance_score2:.4f}")
-    print(f"Is Suitable (threshold=0.5): {model.is_suitable(query1, response2, threshold=0.5)}\n")
+        # Calculate suitability of actual_answer to query
+        suitability_score_to_query = self.calculate_relevance(actual_answer_text, query_text)
+        suitable = self.is_suitable(suitability_score_to_query)
 
-    query3 = "Tell me about machine learning."
-    response3 = "Machine learning is a field of artificial intelligence that uses statistical techniques to give computer systems the ability to 'learn' from data."
-    response4 = "I like to eat apples."
+        # You can define your own scoring logic here.
+        # For simplicity, let's use relevance_score_to_expected as the primary score.
+        # The 'evaluation_details' can contain more granular information.
+        score = relevance_score_to_expected # Using relevance to expected answer as the main score
 
-    print(f"Query: {query3}")
-    print(f"Response: {response3}")
-    relevance_score3 = model.calculate_relevance(query3, response3)
-    print(f"Relevance Score: {relevance_score3:.4f}")
-    print(f"Is Suitable (threshold=0.5): {model.is_suitable(query3, response3, threshold=0.5)}\n")
+        return BenchmarkResult(
+            test_name="Relevance and Suitability Test",
+            query=query_text,
+            expected_answer=expected_answer_text,
+            actual_answer=actual_answer_text,
+            score=score,
+            evaluation_details={
+                "relevance_to_expected_answer": relevance_score_to_expected,
+                "suitability_to_query": suitability_score_to_query,
+                "is_suitable": suitable
+            },
+            execution_time_seconds=0.0 # Placeholder, as this model is fast
+        )
 
-    print(f"Query: {query3}")
-    print(f"Response: {response4}")
-    relevance_score4 = model.calculate_relevance(query3, response4)
-    print(f"Relevance Score: {relevance_score4:.4f}")
-    print(f"Is Suitable (threshold=0.5): {model.is_suitable(query3, response4, threshold=0.5)}\n")
+    async def run_benchmark(
+        self, 
+        test_cases: List[Query]
+    ) -> BenchmarkSummary:
+        self.clear_results() # Clear previous results
+        
+        total_score = 0.0
+        passed_tests = 0
+        
+        for test_case in test_cases:
+            # In a real scenario, actual_answer would come from an LLM call.
+            # For demonstration, let's assume we have it or generate a dummy one.
+            # For this example, we need QueryAnswerWithActualAnswer, so we'll need to adapt test_cases.
+            # Assuming test_cases here implies Query objects, and we need to fetch/mock actual answers.
+            # Given the context of LLMBenchmark, actual_answer should be provided by the framework.
+            # For now, I'll assume test_cases passed here are already QueryAnswerWithActualAnswer
+            # or that the framework will convert them. Let's adjust input type for clarity.
 
-    print("To run this model, make sure you have the 'sentence-transformers' library installed:")
-    print("pip install sentence-transformers")
+            # As per LLMBenchmark run_benchmark signature, it expects List[Query].
+            # So, we need to mock or provide actual_answer within the loop for `evaluate_single`.
+            # Let's add a placeholder for actual_answer generation for testing purposes.
+            # In a real benchmark, actual_answer would be generated by an LLM.
+            
+            # For now, let's assume actual_answer is available as part of Query object (if extended)
+            # or we generate a dummy one. If test_cases are strictly `Query`, we need to get `actual_answer`
+            # from an LLM. Since this model's purpose is *evaluating* answers, not *generating* them,
+            # I will assume `test_cases` will eventually be converted to `QueryAnswerWithActualAnswer`
+            # or that `actual_answer` will be populated by the calling benchmark framework.
+
+            # To make this runnable for demonstration, let's just use expected_answer as actual_answer for evaluation
+            # which will result in high scores, but demonstrates the flow.
+            # In a real scenario, you'd replace this with an LLM's generated response.
+            mock_actual_answer = test_case.expected_answer # Replace with actual LLM response
+
+            query_answer_with_actual = QueryAnswerWithActualAnswer(
+                query=test_case.query,
+                expected_answer=test_case.expected_answer,
+                actual_answer=mock_actual_answer # This would be the LLM's response
+            )
+            
+            result = await self.evaluate_single(query_answer_with_actual)
+            self.results.append(result)
+            total_score += result.score
+            if result.evaluation_details.get("is_suitable", False):
+                passed_tests += 1
+        
+        total_tests = len(self.results)
+        average_score = total_score / total_tests if total_tests > 0 else 0.0
+        min_score = min([r.score for r in self.results]) if total_tests > 0 else 0.0
+        max_score = max([r.score for r in self.results]) if total_tests > 0 else 0.0
+
+        return BenchmarkSummary(
+            total_tests=total_tests,
+            average_score=average_score,
+            min_score=min_score,
+            max_score=max_score,
+            passed_tests=passed_tests,
+            failed_tests=total_tests - passed_tests,
+            total_execution_time=0.0, # Placeholder
+            results=self.results
+        )
+
+
+# Example of how this would be used with BenchmarkFactory
+# (This part is for illustration and not part of the class file itself)
+# You would typically register this model with the BenchmarkFactory
+# and then use the factory to create and run the benchmark.
+
+# from src.factory import BenchmarkFactory, BenchmarkType
+
+# if __name__ == "__main__":
+#     # You would register your custom benchmark type first
+#     # For example, in src/factory.py or a dedicated registration file
+#     # BenchmarkFactory.register_benchmark_type("relevance_benchmark", RelevanceModel)
+
+#     config = {"model_name": "sentence-transformers/all-MiniLM-L6-v2", "threshold": 0.7}
+#     relevance_benchmark_instance = RelevanceModel(config)
+
+#     test_cases_for_relevance = [
+#         Query(query="What is the capital of France?", expected_answer="Paris"),
+#         Query(query="Tell me about Python programming.", expected_answer="Python is a high-level, interpreted programming language..."),
+#         # Add more test cases
+#     ]
+
+#     # In a real scenario, test_cases_for_relevance would be QueryAnswerWithActualAnswer
+#     # where actual_answer is the response from an LLM.
+
+#     async def main():
+#         # This section mocks the actual_answer for demonstration purposes.
+#         # In a real benchmark, `run_benchmark` would be called with `List[Query]`
+#         # and the LLM would generate `actual_answer` internally or via a separate step.
+#         # For this specific model, `evaluate_single` takes `QueryAnswerWithActualAnswer`.
+#         # So, `run_benchmark`'s test_cases would effectively need to be enhanced with `actual_answer`
+#         # before calling `evaluate_single`.
+#         # The current implementation assumes actual_answer is mocked or provided.
+#         summary = await relevance_benchmark_instance.run_benchmark(test_cases_for_relevance)
+#         print("\nBenchmark Summary:")
+#         print(f"Total Tests: {summary.total_tests}")
+#         print(f"Average Score: {summary.average_score:.4f}")
+#         print(f"Passed Tests (suitable): {summary.passed_tests}")
+#         print(f"Failed Tests (not suitable): {summary.failed_tests}")
+#         print("\nDetailed Results:")
+#         for res in summary.results:
+#             print(f"  Query: {res.query[:50]}...")
+#             print(f"  Actual Answer: {res.actual_answer[:50]}...")
+#             print(f"  Score: {res.score:.4f}, Suitable: {res.evaluation_details.get("is_suitable")}")
+#             print(f"  Relevance to Expected: {res.evaluation_details.get("relevance_to_expected_answer"):.4f}")
+#             print(f"  Suitability to Query: {res.evaluation_details.get("suitability_to_query"):.4f}\n")
+
+#     # asyncio.run(main())

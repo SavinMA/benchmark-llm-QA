@@ -6,12 +6,14 @@ from enum import Enum
 from .benchmark import LLMBenchmark
 from .mistral_benchmark import MistralBenchmark
 from .ollama_benchmark import OllamaBenchmark
+from .relevance_model import RelevanceModel
 
 class BenchmarkType(Enum):
     """Типы доступных бенчмарков"""
     OLLAMA_ANSWER_EVALUATION = "ollama_answer_evaluation"
     MISTRAL_ANSWER_EVALUATION = "mistral_answer_evaluation"
     LOCAL_MODEL_ANSWER_EVALUATION = "local_model_answer_evaluation"
+    RELEVANCE_EVALUATION = "relevance_evaluation"
 
 class BenchmarkFactory:
     """Фабрика для создания бенчмарков"""
@@ -31,10 +33,12 @@ class BenchmarkFactory:
         Returns:
             Экземпляр бенчмарка
         """
-        if benchmark_type == BenchmarkType.LLM_ANSWER_EVALUATION:
+        if benchmark_type == BenchmarkType.OLLAMA_ANSWER_EVALUATION:
             return OllamaBenchmark(config)
         elif benchmark_type == BenchmarkType.MISTRAL_ANSWER_EVALUATION:
             return MistralBenchmark(config)
+        elif benchmark_type == BenchmarkType.RELEVANCE_EVALUATION:
+            return RelevanceModel(config)
         
         raise ValueError(f"Неподдерживаемый тип бенчмарка: {benchmark_type}")
     
