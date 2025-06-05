@@ -1,3 +1,5 @@
 {
-  "agentCanUpdateSnapshot": true
+  "snapshot": "snapshot-20250605-b2803855-3494-43b9-b414-1a217221681c",
+  "agentCanUpdateSnapshot": true,
+  "start": "sudo service docker start"
 }
